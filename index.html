@@ -6,14 +6,22 @@
   <title>八年級的回憶攻擊</title>
   <style>
     :root { --primary:#4f46e5; --bg:#f6f7fb; --card:#ffffff; --text:#1f2937; }
-    *{box-sizing:border-box} body{
+    *{box-sizing:border-box}
+    body{
       margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
       background:var(--bg); color:var(--text);
       -webkit-tap-highlight-color: transparent;
     }
-    .wrap{max-width:720px;margin:0 auto;padding:16px 16px 64px}
-    header{display:flex;align-items:center;justify-content:space-between;margin:8px 0 16px}
-    h1{font-size:20px;margin:0; user-select:none; cursor:default;}
+    .wrap{max-width:720px;margin:0 auto;padding:16px 16px 80px}
+    header{
+      display:flex; align-items:center; justify-content:center; margin:8px 0 16px; position:relative;
+    }
+    h1{
+      font-size:28px; margin:0; user-select:none; cursor:default; text-align:center; width:100%;
+    }
+    .admin-badge{
+      position:absolute; right:8px; top:8px; font-size:12px; color:#4338ca; display:none;
+    }
     .card{background:var(--card);border-radius:16px;padding:16px;
       box-shadow:0 6px 20px rgba(0,0,0,.06)}
     .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
@@ -31,8 +39,10 @@
     .meta{display:flex;justify-content:space-between;align-items:center;font-size:14px;color:#6b7280;margin:8px 0 16px}
     .pill{padding:6px 10px;border-radius:999px;background:#eef2ff;color:#4338ca;font-weight:700}
     .timer{font-variant-numeric:tabular-nums; visibility:hidden;}
-    .footer{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.9);
-      border-top:1px solid #e5e7eb;backdrop-filter: blur(6px)}
+    .footer{
+      position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.9);
+      border-top:1px solid #e5e7eb;backdrop-filter: blur(6px)
+    }
     .footer .inner{max-width:720px;margin:0 auto;padding:10px 16px;display:flex;gap:12px;flex-wrap:wrap}
     .result h2{margin:0 0 8px}
     .small{font-size:12px;color:#6b7280}
@@ -47,9 +57,7 @@
   <div class="wrap">
     <header>
       <h1 id="title">八年級的回憶攻擊</h1>
-      <div class="row">
-        <span id="admin-badge" class="small" style="display:none;color:#4338ca">管理模式</span>
-      </div>
+      <span id="admin-badge" class="admin-badge">管理模式</span>
     </header>
 
     <div id="last" class="card" style="display:none;margin-bottom:12px;"></div>
@@ -79,19 +87,24 @@
 
   <div class="footer">
     <div class="inner">
-      <button id="next" class="btn" disabled>下一題</button>
-      <button id="submit" class="btn ghost" disabled>交卷</button>
+      <!-- 主動作：非最後一題顯示「下一題」，最後一題顯示「交卷」 -->
+      <button id="primary-action" class="btn" disabled>下一題</button>
+      <!-- 返回：測驗進行中顯示；回首頁且不顯示分數 -->
+      <button id="return-home" class="btn ghost hidden">返回</button>
+      <!-- 管理控制（僅管理模式顯示） -->
       <button id="admin-open" class="btn hidden">管理題庫</button>
       <button id="admin-exit" class="btn ghost hidden">退出管理模式</button>
     </div>
   </div>
 
+  <!-- 題庫管理對話框 -->
   <dialog id="dlg">
     <div class="dlg-hd">
       <strong>題庫管理</strong>
       <button id="dlg-close" class="ghost" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;cursor:pointer">關閉</button>
     </div>
     <div class="dlg-bd">
+      <p class="small" style="margin-top:0">格式：<code>[{"q":"題目","choices":["A","B","C","D"],"answer":1}]</code>，<code>answer</code> 從 0 計數。</p>
       <textarea id="editor-ta"></textarea>
       <div class="row" style="margin-top:10px">
         <button id="save-bank" class="btn">儲存題庫</button>
@@ -104,7 +117,7 @@
 const ADMIN_CODE = "rouye-quiz-2025";
 const URL_ENABLE_ADMIN = true;
 
-/** 題庫：新增 3 題是非題 */
+/** 題庫（含三題是非題） */
 const DEFAULT_BANK = [
   {"q":"下列哪個是哺乳類？","choices":["青蛙","鯨魚","麻雀","烏龜"],"answer":1},
   {"q":"2 + 2 = ?","choices":["3","4","5","22"],"answer":1},
@@ -115,16 +128,17 @@ const DEFAULT_BANK = [
 ];
 
 const $ = sel => document.querySelector(sel);
-let bank = loadBank(); let idx=0,score=0,selected=null,enableTimer=false,duration=0,remaining=0,tick=null,startedAt=null,adminMode=false;
+let bank = loadBank();
+let idx=0,score=0,selected=null,enableTimer=false,duration=0,remaining=0,tick=null,startedAt=null,adminMode=false;
 
+/** 工具 */
 function loadBank(){ try{const s=localStorage.getItem('quiz_bank');if(!s)return structuredClone(DEFAULT_BANK);const arr=JSON.parse(s);return Array.isArray(arr)?arr:structuredClone(DEFAULT_BANK);}catch{return structuredClone(DEFAULT_BANK);} }
 function saveBank(arr){ localStorage.setItem('quiz_bank', JSON.stringify(arr)); }
 function show(el,on=true){ el.classList.toggle('hidden',!on); }
 function toMMSS(sec){ const m=Math.floor(sec/60),s=sec%60; return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`; }
-
-/** 隨機排序工具 */
 function shuffle(arr){ return arr.map(v=>[Math.random(),v]).sort((a,b)=>a[0]-b[0]).map(v=>v[1]); }
 
+/** 管理模式入口：?admin=1 或連點標題 5 下 */
 (function detectAdmin(){
   function enterAdminFlow(){
     const code=prompt("請輸入管理密碼：");
@@ -138,51 +152,115 @@ function shuffle(arr){ return arr.map(v=>[Math.random(),v]).sort((a,b)=>a[0]-b[0
 function activateAdminUI(){ $('#admin-badge').style.display=''; show($('#admin-hint'),true); show($('#admin-open'),true); show($('#admin-exit'),true); }
 function deactivateAdminUI(){ adminMode=false; $('#admin-badge').style.display='none'; show($('#admin-hint'),false); show($('#admin-open'),false); show($('#admin-exit'),false); }
 
-function updateLast(){ const s=localStorage.getItem('last_score'); const t=localStorage.getItem('last_seconds'); const box=$('#last'); if(s){box.style.display=''; box.innerHTML=`<b>上次成績：</b>${s} 分 <span class="small">（花費 ${t ?? '-'} 秒）</span>`;}else box.style.display='none';}
+/** 上次成績顯示 */
+function updateLast(){
+  const s=localStorage.getItem('last_score'); const t=localStorage.getItem('last_seconds');
+  const box=$('#last');
+  if(s){ box.style.display=''; box.innerHTML=`<b>上次成績：</b>${s} 分 <span class="small">（花費 ${t ?? '-'} 秒）</span>`; }
+  else{ box.style.display='none'; }
+}
 updateLast();
 
+/** 事件 */
 $('#start-free').onclick=()=>startQuiz({timed:false});
 $('#start-10m').onclick=()=>startQuiz({timed:true,seconds:600});
-$('#next').onclick=nextQuestion;
-$('#submit').onclick=finishQuiz;
+$('#primary-action').onclick=primaryActionHandler;
+$('#return-home').onclick=cancelQuizToHome;
 $('#admin-open').onclick=openEditor;
 $('#admin-exit').onclick=deactivateAdminUI;
 $('#dlg-close').onclick=()=>$('#dlg').close();
 $('#save-bank').onclick=saveEditor;
 $('#reset-bank').onclick=()=>{saveBank(DEFAULT_BANK);bank=loadBank();$('#editor-ta').value=JSON.stringify(bank,null,2);alert('已恢復預設題庫。');};
 
-function startQuiz({timed,seconds=0}){ 
-  bank=shuffle(loadBank()); // 題目隨機順序
-  idx=0;score=0;selected=null;startedAt=Date.now(); enableTimer=!!timed; duration=seconds; remaining=duration; clearInterval(tick);
-  $('#remain').textContent=enableTimer?toMMSS(remaining):'—'; $('.timer').style.visibility=enableTimer?'visible':'hidden'; $('#submit').disabled=false; $('#next').disabled=true; $('#home').style.display='none'; $('#result').style.display='none'; $('#quiz').style.display=''; renderQuestion();
-  if(enableTimer){ tick=setInterval(()=>{remaining--; $('#remain').textContent=toMMSS(Math.max(0,remaining)); if(remaining<=0){finishQuiz();}},1000);} 
+/** 狀態切換：開始測驗 */
+function startQuiz({timed,seconds=0}){
+  bank = shuffle(loadBank()); // 題目隨機
+  idx=0;score=0;selected=null;startedAt=Date.now();
+  enableTimer=!!timed; duration=seconds; remaining=duration;
+  clearInterval(tick);
+
+  // UI：顯示測驗、隱藏首頁與結果
+  $('#home').style.display='none';
+  $('#result').style.display='none';
+  $('#quiz').style.display='';
+
+  // 按鈕：開始後顯示「下一題」＋「返回」，不顯示交卷（等最後一題）
+  const primary=$('#primary-action');
+  primary.disabled=true;
+  primary.textContent='下一題';
+  show($('#return-home'), true);
+
+  // 計時 UI
+  $('#remain').textContent=enableTimer?toMMSS(remaining):'—';
+  $('.timer').style.visibility=enableTimer?'visible':'hidden';
+  if(enableTimer){
+    tick=setInterval(()=>{
+      remaining--;
+      $('#remain').textContent=toMMSS(Math.max(0,remaining));
+      if(remaining<=0){ finishQuiz(); }
+    },1000);
+  }
+
+  renderQuestion();
+  window.scrollTo({top:0,behavior:'smooth'});
 }
-function renderQuestion(){ 
+
+/** 渲染題目（含選項隨機） */
+function renderQuestion(){
   const q=bank[idx];
-  // 打亂選項，並記錄新答案位置
   const choicesWithIndex=q.choices.map((c,i)=>({text:c,idx:i}));
   const shuffled=shuffle(choicesWithIndex);
-  const newAnswerIndex=shuffled.findIndex(c=>c.idx===q.answer);
   q._shuffledChoices=shuffled.map(c=>c.text);
-  q._shuffledAnswer=newAnswerIndex;
+  q._shuffledAnswer=shuffled.findIndex(c=>c.idx===q.answer);
 
-  $('#progress').textContent=`${idx+1}/${bank.length}`; 
-  $('#q').textContent=q.q; 
-  const box=$('#choices'); 
-  box.innerHTML=''; 
-  q._shuffledChoices.forEach((text,i)=>{ 
-    const div=document.createElement('label'); 
-    div.className='choice'; 
-    div.innerHTML=`<input type="radio" name="c${idx}" /> <span>${text}</span>`; 
-    div.onclick=()=>{selected=i; $('#next').disabled=false; $('#next').textContent=(idx===bank.length-1)?'交卷':'下一題';}; 
-    box.appendChild(div); 
-  }); 
+  $('#progress').textContent=`${idx+1}/${bank.length}`;
+  $('#q').textContent=q.q;
+
+  const box=$('#choices'); box.innerHTML='';
+  q._shuffledChoices.forEach((text,i)=>{
+    const div=document.createElement('label');
+    div.className='choice';
+    div.innerHTML=`<input type="radio" name="c${idx}" /> <span>${text}</span>`;
+    div.onclick=()=>{ 
+      selected=i; 
+      // 選到選項才可按主按鈕
+      $('#primary-action').disabled=false; 
+      // 如果是最後一題，主按鈕名稱要變成「交卷」
+      $('#primary-action').textContent=(idx===bank.length-1)?'交卷':'下一題';
+    };
+    box.appendChild(div);
+  });
+
+  // 每次換題都先把主按鈕禁用、標題預設為下一題（到最後一題才在點選後變「交卷」）
+  const primary=$('#primary-action');
+  primary.disabled=true;
+  primary.textContent=(idx===bank.length-1)?'交卷':'下一題';
 }
-function nextQuestion(){ if(idx===bank.length-1){finishQuiz();return;} if(selected===bank[idx]._shuffledAnswer)score++; idx++;selected=null;$('#next').disabled=true;renderQuestion();}
-function finishQuiz(){ clearInterval(tick); if(selected!==null&&idx<bank.length){if(selected===bank[idx]._shuffledAnswer)score++;} const elapsed=Math.max(1,Math.round((Date.now()-startedAt)/1000)); const total=bank.length; const pct=Math.round((score/total)*100); localStorage.setItem('last_score',String(score)); localStorage.setItem('last_seconds',String(elapsed)); updateLast();
-  $('#result').innerHTML=`<h2>成績：${score} / ${total}</h2><p class="small">正確率 ${pct}% ・ 花費 ${elapsed} 秒${enableTimer?`（限時 ${toMMSS(duration)}）`:''}</p><div class="row" style="margin-top:8px"><button class="btn" onclick="startQuiz({timed:${enableTimer},seconds:${duration}})">再測一次</button><button class="btn ghost" onclick="(document.querySelector('#result').style.display='none',document.querySelector('#home').style.display='')">回首頁</button></div>`; $('#quiz').style.display='none';$('#home').style.display='none';$('#result').style.display='';$('#next').disabled=true;$('#submit').disabled=true; }
-function openEditor(){ $('#editor-ta').value=JSON.stringify(loadBank(),null,2); $('#dlg').showModal(); }
-function saveEditor(){ try{const arr=JSON.parse($('#editor-ta').value); if(!Array.isArray(arr))throw new Error('格式需為陣列'); for(const it of arr){ if(typeof it.q!=='string'||!Array.isArray(it.choices)||typeof it.answer!=='number') throw new Error('每題需包含 q、choices、answer'); } saveBank(arr); bank=loadBank(); alert('已儲存題庫！'); $('#dlg').close(); }catch(err){alert('存檔失敗：'+err.message);} }
-</script>
-</body>
-</html>
+
+/** 主按鈕行為：非最後一題=下一題；最後一題=交卷 */
+function primaryActionHandler(){
+  if($('#primary-action').textContent==='交卷'){
+    finishQuiz();
+  }else{
+    nextQuestion();
+  }
+}
+
+/** 下一題 */
+function nextQuestion(){
+  if(selected===bank[idx]._shuffledAnswer) score++;
+  idx++;
+  selected=null;
+
+  // 若進入最後一題，主按鈕待使用者選取後會變「交卷」
+  renderQuestion();
+}
+
+/** 交卷 */
+function finishQuiz(){
+  clearInterval(tick);
+  if(selected!==null && idx<bank.length){
+    if(selected===bank[idx]._shuffledAnswer) score++;
+  }
+  const elapsed=Math.max(1,Math.round((Date.now()-startedAt)/1000));
+ 
