@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>小言測驗（Web）</title>
+  <style>
+    :root { --primary:#4f46e5; --bg:#f6f7fb; --card:#ffffff; --text:#1f2937; }
+    *{box-sizing:border-box} body{
+      margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+      background:var(--bg); color:var(--text);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .wrap{max-width:720px;margin:0 auto;padding:16px 16px 48px}
+    header{display:flex;align-items:center;justify-content:space-between;margin:8px 0 16px}
+    h1{font-size:20px;margin:0}
+    .card{background:var(--card);border-radius:16px;padding:16px;
+      box-shadow:0 6px 20px rgba(0,0,0,.06)}
+    .row{display:flex;gap:12px;align-items:center}
+    .btn{
+      appearance:none;border:none;border-radius:12px;padding:12px 16px;
+      background:var(--primary);color:#fff;font-weight:600;cursor:pointer;
+      width:100%;
+    }
+    .btn[disabled]{opacity:.5;cursor:not-allowed}
+    .ghost{background:#e5e7eb;color:#111}
+    .q-text{font-size:18px;line-height:1.5;margin:0 0 12px}
+    .choice{border:1px solid #e5e7eb;border-radius:12px;padding:12px;
+      display:flex;align-items:center;gap:10px;background:#fff}
+    .choice input{width:20px;height:20px}
+    .meta{display:flex;justify-content:space-between;align-items:center;font-size:14px;color:#6b7280;margin:8px 0 16px}
+    .pill{padding:6px 10px;border-radius:999px;background:#eef2ff;color:#4338ca;font-weight:700}
+    .timer{font-variant-numeric:tabular-nums}
+    .footer{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.9);
+      border-top:1px solid #e5e7eb;backdrop-filter: blur(6px)}
+    .footer .inner{max-width:720px;margin:0 auto;padding:10px 16px;display:flex;gap:12px}
+    .result h2{margin:0 0 8px}
+    .small{font-size:12px;color:#6b7280}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>小言測驗（Web）</h1>
+      <div class="row">
+        <label class="row" style="font-size:14px;">
+          <input id="toggle-timer" type="checkbox" checked />
+          啟用 60 秒倒數
+        </label>
+      </div>
+    </header>
+
+    <div id="last" class="card" style="display:none;margin-bottom:12px;"></div>
+
+    <div id="quiz" class="card" style="display:none;">
+      <div class="meta">
+        <div><span id="progress" class="pill">1/1</span></div>
+        <div class="timer">剩餘 <span id="remain">60</span>s</div>
+      </div>
+      <h2 id="q" class="q-text"></h2>
+      <div id="choices" style="display:grid;gap:10px;"></div>
+    </div>
+
+    <div id="result" class="card result" style="display:none;"></div>
+
+    <div id="home" class="card">
+      <p style="margin:0 0 12px;">這是手機瀏覽器就能玩的測驗小工具。你可以直接改題目 JSON 來出題。</p>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <button id="start" class="btn">開始測驗</button>
+        <button id="edit" class="btn ghost">查看 / 編輯題庫</button>
+      </div>
+    </div>
+
+    <div id="editor" class="card" style="display:none;margin-top:12px;">
+      <p class="small" style="margin-top:0">把題目貼在下面（JSON）。按「儲存」後再開始測驗。</p>
+      <textarea id="editor-ta" style="width:100%;min-height:200px;border:1px solid #e5e7eb;border-radius:12px;padding:12px;"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button id="save-bank" class="btn">儲存題庫</button>
+        <button id="reset-bank" class="btn ghost" title="恢復預設題庫">恢復預設</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="inner">
+      <button id="next" class="btn" disabled>下一題</button>
+      <button id="submit" class="btn ghost" disabled>交卷</button>
+    </div>
+  </div>
+
+<script>
+/** ===== 題庫（可在「查看/編輯題庫」中修改） ===== */
+const DEFAULT_BANK = [
+  {"q":"下列哪個是哺乳類？","choices":["青蛙","鯨魚","麻雀","烏龜"],"answer":1},
+  {"q":"2 + 2 = ?","choices":["3","4","5","22"],"answer":1},
+  {"q":"台灣最高峰？","choices":["雪山","玉山","合歡主峰","南湖大山"],"answer":1}
+];
+
+const $ = sel => document.querySelector(sel);
+const $$ = sel => document.querySelectorAll(sel);
+
+let bank = loadBank();
+let idx = 0;
+let score = 0;
+let selected = null;
+let enableTimer = true;
+let remaining = 60;
+let tick = null;
+let startedAt = null;
+
+function loadBank(){
+  try{
+    const s = localStorage.getItem('quiz_bank');
+    if(!s) return structuredClone(DEFAULT_BANK);
+    const arr = JSON.parse(s);
+    return Array.isArray(arr) ? arr : structuredClone(DEFAULT_BANK);
+  }catch{ return structuredClone(DEFAULT_BANK); }
+}
+function saveBank(arr){
+  localStorage.setItem('quiz_bank', JSON.stringify(arr));
+}
+
+/** ====== UI 初始化 ====== */
+function show(el, on=true){ el.style.display = on ? '' : 'none'; }
+function updateLast(){
+  const lastBox = $('#last');
+  const s = localStorage.getItem('last_score');
+  const t = localStorage.getItem('last_seconds');
+  if(s){
+    lastBox.innerHTML = `
+      <b>上次成績：</b>${s} 分
+      <span class="small">（花費 ${t ?? '-'} 秒）</span>`;
+    show(lastBox,true);
+  }else show(lastBox,false);
+}
+updateLast();
+
+$('#toggle-timer').addEventListener('change', e=>{
+  enableTimer = e.target.checked;
+  $('.timer').style.visibility = enableTimer ? 'visible' : 'hidden';
+});
+
+$('#edit').addEventListener('click', ()=>{
+  $('#editor-ta').value = JSON.stringify(loadBank(), null, 2);
+  show($('#editor'), true);
+  window.scrollTo({top: document.body.scrollHeight, behavior:'smooth'});
+});
+
+$('#save-bank').addEventListener('click', ()=>{
+  try{
+    const arr = JSON.parse($('#editor-ta').value);
+    if(!Array.isArray(arr)) throw new Error('格式需為陣列');
+    // 基本驗證
+    for(const it of arr){
+      if(typeof it.q!=='string' || !Array.isArray(it.choices) || typeof it.answer!=='number')
+        throw new Error('每題需包含 q(字串)、choices(陣列)、answer(數字)');
+    }
+    saveBank(arr);
+    bank = loadBank();
+    alert('已儲存題庫！');
+  }catch(err){ alert('存檔失敗：' + err.message); }
+});
+
+$('#reset-bank').addEventListener('click', ()=>{
+  saveBank(DEFAULT_BANK);
+  bank = loadBank();
+  $('#editor-ta').value = JSON.stringify(bank, null, 2);
+  alert('已恢復預設題庫。');
+});
+
+$('#start').addEventListener('click', startQuiz);
+$('#next').addEventListener('click', nextQuestion);
+$('#submit').addEventListener('click', finishQuiz);
+
+function startQuiz(){
+  // 狀態
+  bank = loadBank();
+  idx = 0; score = 0; selected = null;
+  startedAt = Date.now();
+  remaining = 60;
+  clearInterval(tick);
+  if(enableTimer){
+    tick = setInterval(()=>{
+      remaining--; $('#remain').textContent = remaining;
+      if(remaining<=0){ finishQuiz(); }
+    }, 1000);
+  }
+  // UI
+  show($('#home'), false);
+  show($('#result'), false);
+  show($('#quiz'), true);
+  $('.timer').style.visibility = enableTimer ? 'visible' : 'hidden';
+  $('#submit').disabled = false;
+  renderQuestion();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function renderQuestion(){
+  const q = bank[idx];
+  $('#progress').textContent = `${idx+1}/${bank.length}`;
+  $('#q').textContent = q.q;
+
+  const box = $('#choices');
+  box.innerHTML = '';
+  q.choices.forEach((text, i)=>{
+    const id = `c_${idx}_${i}`;
+    const div = document.createElement('label');
+    div.className = 'choice';
+    div.innerHTML = `
+      <input type="radio" name="c${idx}" id="${id}" />
+      <span>${text}</span>
+    `;
+    div.addEventListener('click', ()=>{
+      selected = i;
+      $('#next').disabled = false;
+    });
+    box.appendChild(div);
+  });
+
+  $('#next').textContent = (idx === bank.length - 1) ? '交卷' : '下一題';
+  $('#next').disabled = true;
+}
+
+function nextQuestion(){
+  // 把下一題當成交卷鍵（最後一題）
+  if(idx === bank.length - 1){ finishQuiz(); return; }
+
+  if(selected === bank[idx].answer) score++;
+  idx++;
+  selected = null;
+  renderQuestion();
+}
+
+function finishQuiz(){
+  // 停表
+  clearInterval(tick);
+  if(selected !== null && idx < bank.length){ // 最後一題如果有選到要計分
+    if(selected === bank[idx].answer) score++;
+    idx = bank.length - 1; // 對齊進度
+  }
+  const elapsed = Math.max(1, Math.round((Date.now() - startedAt)/1000));
+  // 存檔
+  localStorage.setItem('last_score', String(score));
+  localStorage.setItem('last_seconds', String(elapsed));
+  updateLast();
+
+  // 顯示成績
+  const total = bank.length;
+  const pct = Math.round((score/total)*100);
+  $('#result').innerHTML = `
+    <h2>成績：${score} / ${total}</h2>
+    <p class="small">正確率 ${pct}% ・ 花費 ${elapsed} 秒</p>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" onclick="startQuiz()">再測一次</button>
+      <button class="btn ghost" onclick="(show($('#result'),false),show($('#home'),true))">回首頁</button>
+    </div>
+  `;
+  show($('#quiz'), false);
+  show($('#home'), false);
+  show($('#result'), true);
+  $('#next').disabled = true;
+  $('#submit').disabled = true;
+}
+</script>
+</body>
+</html>
