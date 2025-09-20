@@ -61,10 +61,11 @@
     <div id="result" class="card hidden"></div>
 
     <div id="home" class="card">
-      <p style="margin:0 0 12px;">選擇模式開始作答：</p>
+      <p style="margin:0 0 12px;">這是一個自製的小小懷舊測驗，主要是針對八年級生(民國80~89年出生)的回憶攻擊~：</p>
       <div class="row" style="margin-top:8px;justify-content:center">
         <button id="start-free" class="btn">開始測驗（不限時）</button>
         <button id="start-10m" class="btn">開始測驗（限時 10 分鐘）</button>
+        <button id="start-all" class="btn">開始測驗（全題庫）</button>
       </div>
     </div>
   </div>
@@ -137,28 +138,50 @@ function toMMSS(sec){const m=Math.floor(sec/60),s=sec%60;return `${String(m).pad
 /* 事件 */
 $('#start-free').onclick=()=>startQuiz({timed:false});
 $('#start-10m').onclick=()=>startQuiz({timed:true,seconds:600});
+$('#start-all').onclick=()=>startQuiz({timed:false, all:true});
 $('#back').onclick=goHome;
 $('#next').onclick=goNext;
 $('#submit').onclick=finishQuiz;
 
-function startQuiz({timed,seconds=0}){
-  bank = shuffle(DEFAULT_BANK).slice(0, 20);
+function startQuiz(opts){
+  const {timed, seconds=0, all=false} = opts;
+
+  if(all){
+    bank = shuffle(DEFAULT_BANK);
+  }else{
+    bank = shuffle(DEFAULT_BANK).slice(0,20);
+  }
+
   bank.forEach(q=>{
     const shuf=shuffle(q.choices.map((t,i)=>({t,i})));
     q._choices=shuf.map(x=>x.t);
     q._answer=shuf.findIndex(x=>x.i===q.answer);
-    q._userAnswer=null; // 新增：預設使用者答案
+    q._userAnswer=null;
   });
+
   idx=0;score=0;selected=null;enableTimer=!!timed;duration=seconds;remaining=duration;
   startedAt=Date.now();clearInterval(tick);
-  $('#home').classList.add('hidden');$('#result').classList.add('hidden');$('#quiz').classList.remove('hidden');
-  $('#back').classList.remove('hidden');$('#next').classList.remove('hidden');$('#submit').classList.add('hidden');
+
+  $('#home').classList.add('hidden');
+  $('#result').classList.add('hidden');
+  $('#quiz').classList.remove('hidden');
+  $('#back').classList.remove('hidden');
+  $('#next').classList.remove('hidden');
+  $('#submit').classList.add('hidden');
   $('#next').disabled=true;
+
   $('.timer').style.visibility=enableTimer?'visible':'hidden';
   $('#remain').textContent=enableTimer?toMMSS(remaining):'—';
-  if(enableTimer){tick=setInterval(()=>{remaining--;$('#remain').textContent=toMMSS(Math.max(0,remaining));if(remaining<=0){finishQuiz();}},1000);}
+  if(enableTimer){
+    tick=setInterval(()=>{
+      remaining--;
+      $('#remain').textContent=toMMSS(Math.max(0,remaining));
+      if(remaining<=0){finishQuiz();}
+    },1000);
+  }
   renderQuestion();
 }
+
 
 function renderQuestion(){
   const q=bank[idx];
@@ -219,6 +242,7 @@ function finishQuiz(){
 </script>
 </body>
 </html>
+
 
 
 
