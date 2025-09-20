@@ -142,7 +142,7 @@ $('#next').onclick=goNext;
 $('#submit').onclick=finishQuiz;
 
 function startQuiz({timed,seconds=0}){
-  bank=shuffle(DEFAULT_BANK);
+  bank = shuffle(DEFAULT_BANK).slice(0, 20);
   bank.forEach(q=>{
     const shuf=shuffle(q.choices.map((t,i)=>({t,i})));
     q._choices=shuf.map(x=>x.t);
@@ -219,4 +219,5 @@ function finishQuiz(){
 </script>
 </body>
 </html>
+
 
